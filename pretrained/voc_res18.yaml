@@ -1,0 +1,17 @@
+output_folder: "../logs"
+loader:
+  batch_size: 32
+dataset:
+  img_folder: "../data/VOCdevkit/VOC2007/JPEGImages"
+  json_folder: "../data"
+input:
+  img_min_size: [288, 320, 352, 384, 416, 448, 480]
+  img_max_size: 640
+model:
+  fpn_feats_dim: 128
+  backbone_freeze_bn: False
+opt:
+  # 1x schedule: mAP@IoU=0.5 ~61%
+  warmup_epochs: 3
+  epochs: 12
+  learning_rate: 0.02
