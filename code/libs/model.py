@@ -70,7 +70,14 @@ class FCOSClassificationHead(nn.Module):
         Some re-arrangement of the outputs is often preferred for training / inference.
         You can choose to do it here, or in compute_loss / inference.
         """
-        return x
+
+        cls_logits = []
+
+        for tensor in x:
+            conv_output = self.conv(tensor)
+            cls_logits.append(self.cls_logits(conv_output))
+
+        return cls_logits
 
 
 class FCOSRegressionHead(nn.Module):
@@ -131,7 +138,16 @@ class FCOSRegressionHead(nn.Module):
         Some re-arrangement of the outputs is often preferred for training / inference.
         You can choose to do it here, or in compute_loss / inference.
         """
-        return x, x
+
+        reg_outputs = []
+        ctr_logits = []
+
+        for tensor in x:
+            conv_output = self.conv(tensor)
+            reg_outputs.append(self.bbox_reg(conv_output))
+            ctr_logits.append(self.bbox_ctrness(conv_output))
+
+        return reg_outputs, ctr_logits
 
 
 class FCOS(nn.Module):
@@ -414,4 +430,19 @@ class FCOS(nn.Module):
     def inference(
         self, points, strides, cls_logits, reg_outputs, ctr_logits, image_shapes
     ):
+        # Loop over every pyramid level
+        for cls_tensor, reg_tensor, ctr_tensor in zip(cls_logits, reg_outputs, ctr_logits):
+            
+            # compute the object scores
+            cls_prob = cls_tensor.sigmoid()
+            ctr_prob = ctr_tensor.sigmoid()
+            object_scores = (cls_prob * ctr_prob).sqrt()
+            
+            # filter out boxes with low object scores
+            filtered_object_scores = object_scores > self.score_thresh
+
+            # select the top K boxes
+            topk_scores, topk_idxs = filtered_object_scores.flatten().topk(self.topk_candidates)
+
+
         return detections
