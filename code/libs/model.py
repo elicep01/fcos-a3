@@ -430,27 +430,71 @@ class FCOS(nn.Module):
     def inference(
         self, points, strides, cls_logits, reg_outputs, ctr_logits, image_shapes
     ):
+        
+        detections = []
+        
         # Loop over every pyramid level
-        for pts, cls_tensor, reg_tensor, ctr_tensor in zip(points, cls_logits, reg_outputs, ctr_logits):
+        for pts, stride, cls_tensor, reg_tensor, ctr_tensor in zip(points, strides, cls_logits, reg_outputs, ctr_logits):
             
             # compute the object scores
             cls_prob = cls_tensor.sigmoid()
             
             # filter out boxes with low object scores
             cls_prob_mask = cls_prob > self.score_thresh
-            filtered_cls_prob = cls_prob[cls_prob_mask]
 
-            # select the top K boxes
-            topk_boxes, topk_idxs = torch.topk(filtered_cls_prob, self.topk_candidates)
+            # Loopiong over every image in the batch
+            for cls_batch, cls_mask, reg_tensor_, image_shape in zip(cls_prob, cls_prob_mask, reg_tensor, image_shapes):
+                filtered_cls_prob = cls_batch[cls_mask]
 
-            # All coordinates (indices) where x >= threshold
-            all_coords = cls_prob_mask.nonzero(as_tuple=False)  # shape [num_valid, 3]
+                if filtered_cls_prob.numel() == 0:
+                    continue
 
-            # Pick only those corresponding to top-k (shape [k, (C x H x W)])
-            topk_boxes_coords = all_coords[topk_idxs]
+                # select the top K boxes
+                if len(filtered_cls_prob) < self.topk_candidates:
+                    topk = len(filtered_cls_prob)
+                    topk_box_cls_probs, topk_idxs = torch.topk(filtered_cls_prob, topk)
 
-            # get ltrb boxes
-            ltrb_boxes = reg_tensor[:, topk_boxes_coords[:, -2], topk_boxes_coords[:, -1]].t()
+                else:
+                    topk_box_cls_probs, topk_idxs = torch.topk(filtered_cls_prob, self.topk_candidates)
+
+                # All coordinates (indices) where x >= threshold
+                all_coords = cls_mask.nonzero(as_tuple=False)  # shape [num_valid, 3]
+
+                # Pick only those corresponding to top-k (shape [k, (C x H x W)])
+                topk_boxes_coords = all_coords[topk_idxs]
+
+                # get ltrb boxes
+                ltrb_boxes = reg_tensor_[:, topk_boxes_coords[:, -2], topk_boxes_coords[:, -1]].t()
+
+                # convert ltrb to (x0, y0, x1, y1) producing tensor shape of (k, 4)
+                decoded_boxes = ltrb_boxes * stride  
+                
+                decoded_boxes = torch.stack([
+                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 0] - decoded_boxes[:, 0],   #x0 = x - ls
+                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 1] - decoded_boxes[:, 1],   #y0 = y - ts
+                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 0] + decoded_boxes[:, 2],   #x1 = x + rs
+                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 1] + decoded_boxes[:, 3],   #y1 = y + bs
+                ], dim=1)
+
+                labels = topk_boxes_coords[:, 0] + 1  # offset by +1
+
+                decoded_boxes[:,0] = torch.clamp(decoded_boxes[:,0], 0, image_shape[0])
+                decoded_boxes[:,1] = torch.clamp(decoded_boxes[:,1], 0, image_shape[1])
+                decoded_boxes[:,2] = torch.clamp(decoded_boxes[:,2], 0, image_shape[0])
+                decoded_boxes[:,3] = torch.clamp(decoded_boxes[:,3], 0, image_shape[1])
+
+                widths = decoded_boxes[:,2] - decoded_boxes[:,0]
+                heights = decoded_boxes[:,3] - decoded_boxes[:,1]
+
+                box_size_mask = heights*widths >4  # Area of boxs is greater than 4
+
+                # box_size_mask = torch.logical_and((widths <= image_shape[0]), (widths >1))      # x1 - x0 (width) <= image width
+                # box_size_mask = torch.logical_and(box_size_mask, (heights <= image_shape[1]))   # y1 - y0 (height) <= image height
+                # box_size_mask = torch.logical_and(box_size_mask, (heights >1))                  # width > 1
+          
+                decoded_boxes = decoded_boxes[box_size_mask]
+                labels = labels[box_size_mask]
+
 
 
             # ctr_prob = ctr_tensor.sigmoid()
