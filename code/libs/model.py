@@ -431,18 +431,29 @@ class FCOS(nn.Module):
         self, points, strides, cls_logits, reg_outputs, ctr_logits, image_shapes
     ):
         # Loop over every pyramid level
-        for cls_tensor, reg_tensor, ctr_tensor in zip(cls_logits, reg_outputs, ctr_logits):
+        for pts, cls_tensor, reg_tensor, ctr_tensor in zip(points, cls_logits, reg_outputs, ctr_logits):
             
             # compute the object scores
             cls_prob = cls_tensor.sigmoid()
-            ctr_prob = ctr_tensor.sigmoid()
-            object_scores = (cls_prob * ctr_prob).sqrt()
             
             # filter out boxes with low object scores
-            filtered_object_scores = object_scores > self.score_thresh
+            cls_prob_mask = cls_prob > self.score_thresh
+            filtered_cls_prob = cls_prob[cls_prob_mask]
 
             # select the top K boxes
-            topk_scores, topk_idxs = filtered_object_scores.flatten().topk(self.topk_candidates)
+            topk_boxes, topk_idxs = torch.topk(filtered_cls_prob, self.topk_candidates)
 
+            # All coordinates (indices) where x >= threshold
+            all_coords = cls_prob_mask.nonzero(as_tuple=False)  # shape [num_valid, 3]
+
+            # Pick only those corresponding to top-k (shape [k, (C x H x W)])
+            topk_boxes_coords = all_coords[topk_idxs]
+
+            # get ltrb boxes
+            ltrb_boxes = reg_tensor[:, topk_boxes_coords[:, -2], topk_boxes_coords[:, -1]].t()
+
+
+            # ctr_prob = ctr_tensor.sigmoid()
+            # object_scores = (cls_prob * ctr_prob).sqrt()
 
         return detections
