@@ -430,35 +430,41 @@ class FCOS(nn.Module):
     def inference(
         self, points, strides, cls_logits, reg_outputs, ctr_logits, image_shapes
     ):
-        
         detections = []
-        
+        for _ in range(len(image_shapes)):
+            detections.append({"boxes": [],
+                "scores": [],
+                "labels": [],
+            })
+
         # Loop over every pyramid level
         for pts, stride, cls_tensor, reg_tensor, ctr_tensor in zip(points, strides, cls_logits, reg_outputs, ctr_logits):
             
             # compute the object scores
             cls_prob = cls_tensor.sigmoid()
-            
+            centerness_prob = ctr_tensor.sigmoid()
+            object_scores = (cls_prob * centerness_prob).sqrt()
+
             # filter out boxes with low object scores
-            cls_prob_mask = cls_prob > self.score_thresh
+            object_scores_mask = object_scores > self.score_thresh
 
             # Loopiong over every image in the batch
-            for cls_batch, cls_mask, reg_tensor_, image_shape in zip(cls_prob, cls_prob_mask, reg_tensor, image_shapes):
-                filtered_cls_prob = cls_batch[cls_mask]
+            for i, (scores, score_mask, reg_tensor_, image_shape) in enumerate(zip(object_scores, object_scores_mask, reg_tensor, image_shapes)):
+                filtered_scores = scores[score_mask]
 
-                if filtered_cls_prob.numel() == 0:
+                if filtered_scores.numel() == 0:
                     continue
 
                 # select the top K boxes
-                if len(filtered_cls_prob) < self.topk_candidates:
-                    topk = len(filtered_cls_prob)
-                    topk_box_cls_probs, topk_idxs = torch.topk(filtered_cls_prob, topk)
+                if len(filtered_scores) < self.topk_candidates:
+                    topk = len(filtered_scores)
+                    topk_box_scores, topk_idxs = torch.topk(filtered_scores, topk)
 
                 else:
-                    topk_box_cls_probs, topk_idxs = torch.topk(filtered_cls_prob, self.topk_candidates)
+                    topk_box_scores, topk_idxs = torch.topk(filtered_scores, self.topk_candidates)
 
                 # All coordinates (indices) where x >= threshold
-                all_coords = cls_mask.nonzero(as_tuple=False)  # shape [num_valid, 3]
+                all_coords = score_mask.nonzero(as_tuple=False)  # shape [num_valid, 3]
 
                 # Pick only those corresponding to top-k (shape [k, (C x H x W)])
                 topk_boxes_coords = all_coords[topk_idxs]
@@ -494,10 +500,29 @@ class FCOS(nn.Module):
           
                 decoded_boxes = decoded_boxes[box_size_mask]
                 labels = labels[box_size_mask]
+                final_scores = topk_box_scores[box_size_mask]
 
+                detections[i]["boxes"].extend(decoded_boxes)
+                detections[i]["labels"].extend(labels)
+                detections[i]["scores"].extend(final_scores)
 
+        # convert list to tensor
+        for i, detection in enumerate(detections):
+            detections[i]["boxes"] = torch.stack(detection["boxes"])
+            detections[i]["labels"] = torch.stack(detection["labels"])
+            detections[i]["scores"] = torch.stack(detection["scores"])
 
-            # ctr_prob = ctr_tensor.sigmoid()
-            # object_scores = (cls_prob * ctr_prob).sqrt()
+            nms_filtered_mask = batched_nms(detections[i]["boxes"], detections[i]["scores"], detections[i]["labels"], self.nms_thresh)
+
+            detections[i]["boxes"] = detections[i]["boxes"][nms_filtered_mask]
+            detections[i]["labels"] = detections[i]["labels"][nms_filtered_mask]
+            detections[i]["scores"] = detections[i]["scores"][nms_filtered_mask]
+
+            # keep a fixed number of boxes after NMS
+            if len(detections[i]["boxes"]) > self.detections_per_img:
+                detections[i]["boxes"] = detections[i]["boxes"][:self.detections_per_img]
+                detections[i]["labels"] = detections[i]["labels"][:self.detections_per_img]
+                detections[i]["scores"] = detections[i]["scores"][:self.detections_per_img]
+                
 
         return detections
