@@ -391,6 +391,85 @@ class FCOS(nn.Module):
     def compute_loss(
         self, targets, points, strides, reg_range, cls_logits, reg_outputs, ctr_logits
     ):
+        r = 1.5 #hyperparameter given in the paper
+        #represents an individual image
+
+        #goal is to get classes for all points, across all targets
+        total_truth_list = []
+
+        classes = 80 #given in the paper
+
+        for target in targets:
+          #we need to check 
+          boxes = target["boxes"]
+          labels = target["labels"]
+
+          #get classes for a single target
+          truth_list = []
+          
+          for i, pyramid in enumerate(points):
+            for point in pyramid.reshape(-1, 2):
+              #by default, the point is a background point
+              label = 0
+              box_area = -1
+              #a point is in a class if it's in the center region
+              for j, box in enumerate(boxes):
+                center_x = (box[2] + box[0])/2
+                center_y = (box[3] + box[1])/2
+
+                #calculate the center region
+                right_bound = center_x + r*strides[i]
+                left_bound = center_x - r*strides[i]
+                top_bound = center_y + r*strides[i]
+                bottom_bound = center_y - r*strides[i]
+                if point[0] >= left_bound and point[0] <= right_bound and point[1] >= bottom_bound and point[1] <= top_bound:
+                  possible_box_area = (box[2]-box[0])*(box[3]-box[1])
+                  #classify points according to label from box. 
+                  #in the case of overlap, only reclassify if the box area is smaller.
+                  if label == 0 or possible_box_area < box_area:
+                    label = labels[j]
+                    box_area = possible_box_area
+            #get all label targets
+            truth_list.append(label)
+          total_truth_list.append(truth_list)
+
+        #reshape for compatibility
+        total_truth_list = torch.tensor(total_truth_list)
+        for i, logit in enumerate(cls_logits):
+            cls_logits[i] = logit.reshape(len(targets), -1, classes)
+        for val in total_truth_list:
+            val = val.reshape(len(targets), -1, classes)
+
+        cls_loss = sigmoid_focal_loss(cls_logits, total_truth_list)
+        print(cls_loss)
+        
+      # print("TARGETS:")
+        # print(type(targets))
+        # print(type(targets[0]))
+        # print(targets[0])
+
+        # print("POINTS:")
+        # print(type(points))
+        # print(type(points[0]))
+        # print(points[0].shape)
+
+        # print("STRIDES:")
+        # print(type(strides))
+        # print(strides.shape)
+
+        # print("REG RANGE:")
+        # print(type(reg_range))
+        # print(reg_range.shape)
+
+        # print("CLS LOGITS:")
+        # print(type(cls_logits))
+        # print(type(cls_logits[0]))
+        # print(cls_logits[0].shape)
+
+        # print("REG OUTPUTS:")
+        # print(type(reg_outputs))
+        # print(type(reg_outputs[0]))
+        # print(reg_outputs[0].shape)
         return losses
 
     """
