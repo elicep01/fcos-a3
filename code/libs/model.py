@@ -475,19 +475,22 @@ class FCOS(nn.Module):
                 # convert ltrb to (x0, y0, x1, y1) producing tensor shape of (k, 4)
                 decoded_boxes = ltrb_boxes * stride  
                 
+                # pts is size H x W x 2 with 2d coordinates in format of (height, width)
+                # x is width and y is height 
                 decoded_boxes = torch.stack([
-                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 0] - decoded_boxes[:, 0],   #x0 = x - ls
-                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 1] - decoded_boxes[:, 1],   #y0 = y - ts
-                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 0] + decoded_boxes[:, 2],   #x1 = x + rs
-                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 1] + decoded_boxes[:, 3],   #y1 = y + bs
+                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 1] - decoded_boxes[:, 0],   #x0 = x - ls
+                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 0] - decoded_boxes[:, 1],   #y0 = y - ts
+                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 1] + decoded_boxes[:, 2],   #x1 = x + rs
+                    pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 0] + decoded_boxes[:, 3],   #y1 = y + bs
                 ], dim=1)
 
                 labels = topk_boxes_coords[:, 0] + 1  # offset by +1
 
-                decoded_boxes[:,0] = torch.clamp(decoded_boxes[:,0], 0, image_shape[0])
-                decoded_boxes[:,1] = torch.clamp(decoded_boxes[:,1], 0, image_shape[1])
-                decoded_boxes[:,2] = torch.clamp(decoded_boxes[:,2], 0, image_shape[0])
-                decoded_boxes[:,3] = torch.clamp(decoded_boxes[:,3], 0, image_shape[1])
+                # image_shapes (height, Width)?
+                decoded_boxes[:,0] = torch.clamp(decoded_boxes[:,0], 0, image_shape[1])
+                decoded_boxes[:,1] = torch.clamp(decoded_boxes[:,1], 0, image_shape[0])
+                decoded_boxes[:,2] = torch.clamp(decoded_boxes[:,2], 0, image_shape[1])
+                decoded_boxes[:,3] = torch.clamp(decoded_boxes[:,3], 0, image_shape[0])
 
                 widths = decoded_boxes[:,2] - decoded_boxes[:,0]
                 heights = decoded_boxes[:,3] - decoded_boxes[:,1]
