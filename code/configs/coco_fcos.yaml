@@ -2,10 +2,10 @@ output_folder: "../logs"
 loader:
   batch_size: 32
 dataset:
-  img_folder: "../data/VOCdevkit/VOC2007/JPEGImages"
-  json_folder: "../data"
-  name: "VOC2007"
-  train: "trainval"
+  img_folder: "../data/train2017"
+  json_folder: "../data/annotations" 
+  name: "COCO"
+  train: "instances_train2017"
 
 input:
   img_min_size: [288, 320, 352, 384, 416, 448, 480]

@@ -79,6 +79,9 @@ def build_dataset(name, split, img_folder, json_folder):
     if name == "VOC2007":
         assert split in ["trainval", "test"]
         is_training = split == "trainval"
+    elif name == "COCO":
+        assert split in ["instances_train2017"]
+        is_training = split == "instances_train2017"
     else:
         print("Unsupported dataset")
         return None
@@ -92,6 +95,10 @@ def build_dataset(name, split, img_folder, json_folder):
         dataset = VOCDetection(
             img_folder, os.path.join(json_folder, split + ".json"), transforms
         )
+    elif name == "COCO":
+        dataset = torchvision.datasets.CocoDetection(
+            img_folder, os.path.join(json_folder, split + ".json"), transforms
+        )      
     return dataset
 
 
