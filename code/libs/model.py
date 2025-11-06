@@ -741,6 +741,13 @@ class FCOS(nn.Module):
 
         # convert list to tensor
         for i, detection in enumerate(detections):
+            if len(detection["boxes"]) == 0:
+                # create empty tensors on the right device
+                device = points[0].device
+                detections[i]["boxes"]  = torch.zeros((0, 4), device=device, dtype=torch.float32)
+                detections[i]["labels"] = torch.zeros((0,),    device=device, dtype=torch.long)
+                detections[i]["scores"] = torch.zeros((0,),    device=device, dtype=torch.float32)
+                continue
             detections[i]["boxes"] = torch.stack(detection["boxes"])
             detections[i]["labels"] = torch.stack(detection["labels"])
             detections[i]["scores"] = torch.stack(detection["scores"])
