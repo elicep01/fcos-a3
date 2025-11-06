@@ -158,6 +158,7 @@ def evaluate(
             for box, score, label in zip(boxes, scores, labels):
                 det_results.append(
                     {
+                        "info": "Example dataset for training",
                         "image_id": image_id,
                         "category_id": int(label),
                         "bbox": box,
