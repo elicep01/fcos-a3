@@ -10,6 +10,8 @@ from torchvision.ops.boxes import batched_nms
 import torch
 from torch import nn
 
+import torch.nn.functional as F
+
 # point generator
 from .point_generator import PointGenerator
 
@@ -538,23 +540,26 @@ class FCOS(nn.Module):
             return:
             - cls_loss: scalar tensor
             """
-            #create mapping of targets so that we can compare to cls_logits_flat
-            resized_labels_int = torch.zeros(cls_logits_flat.shape, device=device, dtype=reg_all.dtype)
-            #adjust label values (1-80) so they match 0-based indices (0-79)
-            labels_int -= 1
-            #get mask for only valid points on images (a classification exists).
-            valid_mask = labels_int > -1
-            total_valid = torch.sum(valid_mask)
-            if valid_mask.any():
-              #create one hot vector
-              resized_labels_int[valid_mask] = torch.zeros((total_valid, cls_logits_flat.shape[2]), device=device, dtype=reg_all.dtype)
-              #get list of indices but reshaped so it works with scatter, then add indices
-              one_hot_indices = labels_int[valid_mask].unsqueeze(1)
-              resized_labels_int[valid_mask].scatter_(1, one_hot_indices, 1.0)
 
-            cls_loss = sigmoid_focal_loss(cls_logits_flat, resized_labels_int, reduction="sum")
-            cls_loss = cls_loss / num_pos_scalar
-            return cls_loss
+            #align with 0-index
+            labels_0based = labels_int - 1
+            valid = labels_int > 0
+
+            #create mapping of targets so that we can compare to cls_logits_flat
+            target = torch.zeros_like(cls_logits_flat)
+
+            #directly create one hot vector
+            one_hot_vector = F.one_hot(
+                labels_0based[valid],
+                num_classes=cls_logits_flat.shape[2]
+            ).float()
+            #fix type and assign
+            one_hot_vector = one_hot_vector.to(dtype=target.dtype, device=target.device)
+            target[valid] = one_hot_vector 
+            #making sure to use correct alpha/gamma parameters
+            loss = sigmoid_focal_loss(cls_logits_flat, target, alpha=0.25, gamma=2, reduction="sum")
+            
+            return loss / num_pos_scalar
 
 
         def _loss_reg(reg_logits_flat, reg_tgts_flat, pos_mask, num_pos_scalar):
