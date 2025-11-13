@@ -389,7 +389,6 @@ class FCOS(nn.Module):
     }
     where the final_loss is a sum of the three losses and will be used for training.
     """
-
     def compute_loss(
         self, targets, points, strides, reg_range, cls_logits, reg_outputs, ctr_logits
     ):
@@ -435,6 +434,7 @@ class FCOS(nn.Module):
         labels_all   = torch.zeros((N, S),    dtype=torch.long,    device=device)  # 0 = background
         reg_tgts_all = torch.zeros((N, S, 4), dtype=torch.float32, device=device)  # [l,t,r,b]/stride
         ctr_tgts_all = torch.zeros((N, S),    dtype=torch.float32, device=device)  # (0,1)
+        labels_all -= 1
 
         #  assignment (shared by cls/reg/ctr) 
         # FCOS rules: inside-box  ∧  inside center window (radius = cfg*r*stride)  ∧  max(l,t,r,b) in reg_range[level]
@@ -457,8 +457,8 @@ class FCOS(nn.Module):
                 stride_l = strides[l_idx]
                 stride_l = int(stride_l.item()) if torch.is_tensor(stride_l) else int(stride_l)
 
-                x = pts[:, 0:1]  # [HW,1]
-                y = pts[:, 1:2]  # [HW,1]
+                y = pts[:, 0:1]  # [HW,1]
+                x = pts[:, 1:2]  # [HW,1]
 
                 # distances to sides [HW, M]
                 ldist = x - gt_boxes[:, 0].view(1, -1)
@@ -521,7 +521,7 @@ class FCOS(nn.Module):
         ctr_all = _flatten_levels(ctr_logits).squeeze(-1)  # [N, S]
 
         # positives + normalizer
-        pos = (labels_all > 0)           # [N, S]
+        pos = (labels_all > -1)           # [N, S]
         num_pos = pos.sum().clamp(min=1) # scalar
 
         if DEBUG:
@@ -540,10 +540,12 @@ class FCOS(nn.Module):
             return:
             - cls_loss: scalar tensor
             """
-
+            print(labels_int)
+            print(labels_int.max())
             #align with 0-index
-            labels_0based = labels_int - 1
-            valid = labels_int > 0
+
+            labels_0based = labels_int
+            valid = labels_int > -1
 
             #create mapping of targets so that we can compare to cls_logits_flat
             target = torch.zeros_like(cls_logits_flat)
@@ -627,6 +629,12 @@ class FCOS(nn.Module):
             "ctr_loss": ctr_loss,
             "final_loss": final_loss,
         }
+
+
+
+
+
+
 
     """
     Fill in the missing code here. The inference is also a bit involved. It is
