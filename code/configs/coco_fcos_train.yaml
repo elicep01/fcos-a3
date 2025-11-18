@@ -18,6 +18,5 @@ model:
 
 opt:
   # 1x schedule: mAP@IoU=0.5 ~61%
-  warmup_epochs: 3
-  epochs: 4 
+  epochs: 3
   learning_rate: 0.02
