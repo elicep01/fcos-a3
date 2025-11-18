@@ -8,7 +8,7 @@ import torchvision
 from torch.utils.data import DataLoader
 import torchvision.transforms as T
 
-from .transforms import Compose, ConvertAnnotations, RandomHorizontalFlip, ToTensor
+from .transforms import Compose, ConvertAnnotations, ConvertAnnotationsCOCO, RandomHorizontalFlip, ToTensor
 
 
 def trivial_batch_collator(batch):
@@ -36,6 +36,7 @@ class VOCDetection(torchvision.datasets.CocoDetection):
     def __init__(self, img_folder, ann_file, transforms):
         super().__init__(img_folder, ann_file)
         self._transforms = transforms
+  
 
     def get_cls_names(self):
         cls_names = (
@@ -70,6 +71,37 @@ class VOCDetection(torchvision.datasets.CocoDetection):
             img, target = self._transforms(img, target)
         return img, target
 
+class COCODetection(torchvision.datasets.CocoDetection):
+    """
+    A simple dataset wrapper to load COCO data
+    """
+
+    def __init__(self, img_folder, ann_file, transforms):
+        super().__init__(img_folder, ann_file)
+        self._transforms = transforms
+        sorted_cat_ids = sorted(self.coco.getCatIds())
+        self.lookup_table = [-1 for i in range(100)]
+        for i in range(80):
+          self.lookup_table[sorted_cat_ids[i]] = i
+        self.lookup_table = torch.tensor(self.lookup_table, dtype = torch.int64)
+        
+    def __getitem__(self, idx):
+        img, annotations = super().__getitem__(idx)
+        image_id = self.ids[idx]
+        # for annotation in annotations:
+        #   annotation["category_id"] = self.lookup_table[annotation["category_id"]]
+          
+        labels = torch.tensor([annotation["category_id"] for annotation in annotations], dtype = torch.int64)
+        mapped_labels = self.lookup_table[labels]
+
+
+        for annotation, mapped_label in zip(annotations, mapped_labels):
+          annotation["category_id"] = int(mapped_label)
+        target = dict(image_id=image_id, annotations=annotations)
+
+        if self._transforms is not None:
+            img, target = self._transforms(img, target)
+        return img, target
 
 def build_dataset(name, split, img_folder, json_folder):
     """
@@ -79,26 +111,31 @@ def build_dataset(name, split, img_folder, json_folder):
     if name == "VOC2007":
         assert split in ["trainval", "test"]
         is_training = split == "trainval"
+        if is_training:
+            transforms = Compose([ConvertAnnotations(), RandomHorizontalFlip(), ToTensor()])
+        else:
+            transforms = Compose([ConvertAnnotations(), ToTensor()])
+
     elif name == "COCO":
-        assert split in ["instances_train2017"]
+        assert split in ["instances_train2017", "instances_val2017"]
         is_training = split == "instances_train2017"
-    else:
+        if is_training:
+            transforms = Compose([ConvertAnnotationsCOCO(), RandomHorizontalFlip(), ToTensor()])
+        else:
+            transforms = Compose([ConvertAnnotationsCOCO(), ToTensor()])
+    else: 
         print("Unsupported dataset")
         return None
-
-    if is_training:
-        transforms = Compose([ConvertAnnotations(), RandomHorizontalFlip(), ToTensor()])
-    else:
-        transforms = Compose([ConvertAnnotations(), ToTensor()])
 
     if name == "VOC2007":
         dataset = VOCDetection(
             img_folder, os.path.join(json_folder, split + ".json"), transforms
         )
     elif name == "COCO":
-        dataset = torchvision.datasets.CocoDetection(
+        dataset = COCODetection(
             img_folder, os.path.join(json_folder, split + ".json"), transforms
         )      
+
     return dataset
 
 

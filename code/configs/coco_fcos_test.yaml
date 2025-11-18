@@ -2,10 +2,10 @@ output_folder: "../logs"
 loader:
   batch_size: 32
 dataset:
-  img_folder: "../data/VOCdevkit/VOC2007/JPEGImages"
-  json_folder: "../data"
-  name: "VOC2007"
-  train: "trainval"
+  img_folder: "../data/val2017"
+  json_folder: "../data/annotations" 
+  name: "COCO"
+  test: "instances_val2017"
 
 input:
   img_min_size: [288, 320, 352, 384, 416, 448, 480]
@@ -13,9 +13,10 @@ input:
 model:
   fpn_feats_dim: 128
   backbone_freeze_bn: False
-  dataset: "VOC"
+  num_classes: 80
+  dataset: "COCO"
 opt:
   # 1x schedule: mAP@IoU=0.5 ~61%
   warmup_epochs: 3
-  epochs: 10
+  epochs: 4
   learning_rate: 0.02

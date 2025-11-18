@@ -73,6 +73,56 @@ class ConvertAnnotations:
 
         return image, target
 
+class ConvertAnnotationsCOCO:
+    """
+    Convert the COCO annotations into a format that can be accepted by the model.
+    The converted target include
+        - boxes (``FloatTensor[N, 4]``): the ground-truth boxes in
+            ``[x1, y1, x2, y2]`` format, with ``0 <= x1 < x2 <= W``
+            and ``0 <= y1 < y2 <= H``.
+        - labels (Int64Tensor[N]): the class label for each ground-truth box
+        - image_id (Tensor[1]): the id of the image
+        - area (Tensor[N]): area of each ground-truth box (not used)
+        - iscrowd (Tensor[N]): if the box contains multiple objects (not used)
+    """
+
+    def __call__(self, image, target):
+        w, h = image.size
+
+        image_id = target["image_id"]
+        image_id = torch.tensor([image_id])
+
+        anno = target["annotations"]
+
+        anno = [obj for obj in anno if obj["iscrowd"] == 0]
+
+        boxes = [obj["bbox"] for obj in anno]
+        # guard against no boxes via resizing
+        boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
+        boxes[:, 2:] += boxes[:, :2]
+        boxes[:, 0::2].clamp_(min=0, max=w)
+        boxes[:, 1::2].clamp_(min=0, max=h)
+
+        classes = [obj["category_id"] for obj in anno]
+        classes = torch.tensor(classes, dtype=torch.int64) 
+
+        keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
+        boxes = boxes[keep]
+        classes = classes[keep]
+
+        target = {}
+        target["boxes"] = boxes
+        target["labels"] = classes
+        target["image_id"] = image_id
+
+        # for conversion to coco api
+        area = torch.tensor([obj["area"] for obj in anno])
+        iscrowd = torch.tensor([obj["iscrowd"] for obj in anno])
+        target["area"] = area
+        target["iscrowd"] = iscrowd
+
+        return image, target
+
 
 class RandomHorizontalFlip(T.RandomHorizontalFlip):
     """

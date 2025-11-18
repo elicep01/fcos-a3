@@ -206,6 +206,7 @@ class FCOS(nn.Module):
         img_std,
         train_cfg,
         test_cfg,
+        dataset
     ):
         super().__init__()
         assert backbone in ("resnet18", "resnet34", "resnet50", "resnet101", "resnet152")
@@ -214,6 +215,7 @@ class FCOS(nn.Module):
         self.fpn_strides = fpn_strides
         self.num_classes = num_classes
         self.regression_range = regression_range
+        self.dataset = dataset
 
         return_nodes = {}
         for feat in backbone_out_feats:
@@ -540,9 +542,10 @@ class FCOS(nn.Module):
             return:
             - cls_loss: scalar tensor
             """
-            print(labels_int)
-            print(labels_int.max())
             #align with 0-index
+
+            # print("labels_int unique:", torch.unique(labels_int).cpu())
+            # print("num_pos_scalar:", num_pos_scalar.item())
 
             labels_0based = labels_int
             valid = labels_int > -1
@@ -680,6 +683,10 @@ class FCOS(nn.Module):
                 "labels": [],
             })
 
+        if self.dataset == "COCO":
+          coco_original_classes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 27, 28, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 67, 70, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 84, 85, 86, 87, 88, 89, 90]
+          coco_lookup = torch.tensor(coco_original_classes, dtype=torch.int64, device=ctr_logits[0].device)
+
         # Loop over every pyramid level
         for pts, stride, cls_tensor, reg_tensor, ctr_tensor in zip(points, strides, cls_logits, reg_outputs, ctr_logits):
             
@@ -727,7 +734,10 @@ class FCOS(nn.Module):
                     pts[topk_boxes_coords[:, -2], topk_boxes_coords[:, -1], 0] + decoded_boxes[:, 3],   #y1 = y + bs
                 ], dim=1)
 
-                labels = topk_boxes_coords[:, 0] + 1  # offset by +1
+                if self.dataset == "COCO":
+                  labels = coco_lookup[topk_boxes_coords[:, 0]]
+                else: #by default, assuming VOC
+                  labels = topk_boxes_coords[:, 0] + 1  # offset by +1
 
                 # image_shapes (height, Width)?
                 decoded_boxes[:,0] = torch.clamp(decoded_boxes[:,0], 0, image_shape[1])
