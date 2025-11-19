@@ -10,6 +10,8 @@ input:
 model:
   fpn_feats_dim: 128
   backbone_freeze_bn: False
+  dataset: "VOC"
+  
 opt:
   # 1x schedule: mAP@IoU=0.5 ~61%
   warmup_epochs: 3

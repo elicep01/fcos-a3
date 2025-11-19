@@ -17,5 +17,6 @@ model:
   dataset: "COCO"
 opt:
   # 1x schedule: mAP@IoU=0.5 ~61%
+  warmup_epochs: 0
   epochs: 3
   learning_rate: 0.02
